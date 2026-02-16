@@ -27,7 +27,7 @@ function App() {
   const [alert, setAlert] = useState(false);
 
   useEffect(() => {
-    const ws = new WebSocket("wss://fgpa-dashboard.onrender.com/ws/telemetry");
+    const ws = new WebSocket("wss://fgpa-dashboard-backend.onrender.com/ws/telemetry");
 
 
 
