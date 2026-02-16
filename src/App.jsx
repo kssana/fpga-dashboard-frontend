@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LineChart,
   Line,
@@ -20,31 +20,48 @@ import {
 } from "@mui/material";
 
 function App() {
+  // =========================
+  // STATE
+  // =========================
   const [data, setData] = useState([]);
   const [mode, setMode] = useState("...");
   const [latency, setLatency] = useState(0);
   const [compression, setCompression] = useState(0);
   const [alert, setAlert] = useState(false);
 
+  // Persistent WebSocket reference
+  const socketRef = useRef(null);
+
+  // =========================
+  // WEBSOCKET CONNECTION
+  // =========================
   useEffect(() => {
-    const ws = new WebSocket("wss://fgpa-dashboard-backend.onrender.com/ws/telemetry");
+    if (socketRef.current) return;
 
+    const WS_URL =
+      import.meta.env.PROD
+        ? "wss://fgpa-dashboard-backend.onrender.com/ws/telemetry"
+        : "ws://localhost:8000/ws/telemetry";
 
+    socketRef.current = new WebSocket(WS_URL);
 
+    socketRef.current.onopen = () => {
+      console.log("✅ WebSocket connected");
+    };
 
-    ws.onmessage = (event) => {
+    socketRef.current.onmessage = (event) => {
       const parsed = JSON.parse(event.data);
+      console.log("📩 Telemetry received", parsed);
 
-      const flow = parsed.sensor_values.flow;
-      const pressure = parsed.sensor_values.pressure;
+      const { flow, pressure, vibration } = parsed.sensor_values;
 
-      setData(prev => [
+      setData((prev) => [
         ...prev.slice(-40),
         {
           time: parsed.sequence_number,
           flow,
           pressure,
-          vibration: parsed.sensor_values.vibration
+          vibration
         }
       ]);
 
@@ -52,27 +69,40 @@ function App() {
       setLatency(parsed.latency);
       setCompression(parsed.compression_ratio);
 
-      if (flow > 7000 || pressure < 25000) {
-        setAlert(true);
-      } else {
-        setAlert(false);
-      }
+      // Simple fault logic
+      setAlert(flow > 7000 || pressure < 25000);
     };
 
-    return () => ws.close();
+    socketRef.current.onerror = (err) => {
+      console.error("❌ WebSocket error", err);
+    };
+
+    socketRef.current.onclose = () => {
+      console.warn("⚠️ WebSocket closed");
+      socketRef.current = null;
+    };
+
+    return () => {
+      console.log("🔻 App unmounted — closing WebSocket");
+      socketRef.current?.close();
+    };
   }, []);
 
+  // =========================
+  // UI
+  // =========================
   return (
     <Container maxWidth="xl" sx={{ mt: 4 }}>
       <Typography variant="h3" gutterBottom>
         FPGA Telemetry Monitoring Dashboard
       </Typography>
 
-      {/* KPI Section */}
+      {/* KPI SECTION */}
       <Grid container spacing={3}>
         <KPI title="Compression Mode" value={mode} />
         <KPI title="Latency (ms)" value={latency} />
         <KPI title="Compression Ratio" value={compression} />
+
         <Grid item xs={12} md={3}>
           <Card>
             <CardContent>
@@ -88,7 +118,7 @@ function App() {
         </Grid>
       </Grid>
 
-      {/* Chart Section */}
+      {/* CHART SECTION */}
       <Box mt={5}>
         <Card>
           <CardContent>
@@ -113,6 +143,9 @@ function App() {
   );
 }
 
+// =========================
+// KPI COMPONENT
+// =========================
 function KPI({ title, value }) {
   return (
     <Grid item xs={12} md={3}>
